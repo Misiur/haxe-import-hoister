@@ -183,11 +183,12 @@ function parseConflict(source: ImportMeta, conflicts:Conflicts) {
 }
 
 function applyAlias(target:HoistParams, alias:string) {
-  target.shortName = alias;
   target.hoisted = `${target.moduleName}.${target.shortName} as ${alias}`;
+  target.alias = alias;
 }
 
 function resolveConflicts(targets:HoistParams[], imports:Imports, conflicts:Conflicts, duplicatesAction:DuplicatesAction) {
+  let skipped = 0;
   for (let [i, target] of targets.entries()) {
     if (!conflicts.has(target.shortName)) {
       continue;
@@ -196,17 +197,26 @@ function resolveConflicts(targets:HoistParams[], imports:Imports, conflicts:Conf
     const conflict = conflicts.get(target.shortName)!;
     const alias = findAlias(target, conflict.conflicts);
 
-    if (duplicatesAction === DuplicatesAction.SKIP && !alias) {
-      delete targets[i];
+    let shouldAlias = false;
+    if (duplicatesAction === DuplicatesAction.SKIP) {
+      if (alias && !(new RegExp(`${target.shortName}_\\d+`).test(<string> alias))) {
+        shouldAlias = true;
+      } else if (conflict.count > 1) {
+        skipped += 1;
+        delete targets[i];
+      }
     } else if (duplicatesAction === DuplicatesAction.ALIAS) {
       if (!imports.wildcards.has(target.moduleName) && alias) {
-        applyAlias(target, alias);
+        shouldAlias = true;
       }
     }
 
-    // conflict.conflicts = conflict.conflicts.filter(single => single.moduleName !== target.moduleName);
+    if (shouldAlias) {
+      applyAlias(target, <string> alias);
+    }
   }
 
+  
   if (duplicatesAction === DuplicatesAction.SKIP) {
     for (let i = 0; i < targets.length; ++i) {
       if(targets[i] === undefined) {
@@ -214,6 +224,8 @@ function resolveConflicts(targets:HoistParams[], imports:Imports, conflicts:Conf
       }
     }
   }
+
+  return skipped;
 }
 
 function findAlias(target:HoistParams, modules:ImportMeta[]) {
@@ -278,10 +290,10 @@ async function prepareHoistEdits(editor: TextEditor, sourceTargets: HoistParams[
 
 export function applyHoistsToFile(editor: TextEditor, targets:HoistParams[], imports:Imports, conflicts:Conflicts, duplicatesAction: DuplicatesAction) {
   editor.edit((builder) => {
-    resolveConflicts(targets, imports, conflicts, duplicatesAction);
+    let skipped = resolveConflicts(targets, imports, conflicts, duplicatesAction);
 
     for (let target of targets) {
-      let fullName = target.shortName;
+      let fullName = target.alias ? target.alias : target.shortName;
       if (target.enumValue) {
         fullName += `.${target.enumValue}`;
       }
@@ -292,8 +304,8 @@ export function applyHoistsToFile(editor: TextEditor, targets:HoistParams[], imp
       ), fullName);
     }
 
-    let [skipped, inserted] = applyImportsToFile(builder, targets, imports);
-    window.showInformationMessage(`Hoisted ${targets.length} imports - created ${inserted} new, and skipped ${skipped}`);
+    let [duplicates, inserted] = applyImportsToFile(builder, targets, imports);
+    window.showInformationMessage(`Hoisted ${targets.length} imports - created ${inserted} new, skipped ${duplicates} duplicates, and skipped ${skipped} conflicts`);
   })
   ;
 }
@@ -304,7 +316,7 @@ function applyImportsToFile(builder:TextEditorEdit, targets:HoistParams[], impor
   let duplicates = new Set();
 
   for (const target of targets) {
-    if (duplicates.has(target.hoisted) || imports.wildcards.has(target.moduleName)) {
+    if (duplicates.has(target.hoisted) || imports.unique.has(`${target.moduleName}.${target.shortName}`) || imports.wildcards.has(target.moduleName)) {
       skipped += 1;
     } else {
       const line = `import ${target.hoisted};\n`;

@@ -25,7 +25,7 @@ describe('Hoister tests', () => {
     for (let [i, text] of editor.document.getText().split('\n').entries()) {
       targets = targets.concat(hoister.matchPattern(text, i));
     }
-    const conflicts = hoister.listConflicts(targets);
+    const conflicts = hoister.findConflicts(targets, imports);
     hoister.applyHoistsToFile(editor, targets, imports, conflicts, hoister.DuplicatesAction.ALIAS);
 
     const aliasedDocument = await workspace.openTextDocument(getByFilename(files, ALIASED_FILE));
