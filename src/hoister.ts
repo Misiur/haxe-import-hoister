@@ -1,24 +1,29 @@
 'use strict';
 
-import { window, Range, Position, TextEditor } from 'vscode';
+import { window, Range, Position, TextEditor, TextEditorEdit } from 'vscode';
 
 const PRECEDING_TOKENS = [':', '<', ','];
 const CLASS_REGEX = /[:<\,](\s?)((([a-z]([0-9a-z_]+)\.?)+)\.([A-Za-z_]\w*)(\.([A-Z_][A-Z_]+))?)\s?(?:[\),>;=\{]|$)/g;
 const SKIP_REGEX = /^package|using|#|\*|\//i;
 
-export type HoistParams = {
-  startIndex:number;
-  replaceLength:number;
-  lineNumber:number;
+type ImportMeta = {
   hoisted:string;
   moduleName:string;
-  shortName:string;
+  shortName: string;
+  enumValue?: string;
+  alias?: string;
 };
 
-type Conflicts = Map<string, { count:number, conflicts:HoistParams[] }>;
+export type HoistParams = {
+  startIndex: number;
+  replaceLength: number;
+  lineNumber: number;
+} & ImportMeta;
+
+type Conflicts = Map<string, { count: number, conflicts: ImportMeta[] }>;
 
 type Imports = {
-  unique:Set<string>;
+  unique: Map<string, ImportMeta>;
   wildcards:Set<string>;
   lastImportLine:number;
 };
@@ -41,9 +46,9 @@ function hoistCurrent(editor: TextEditor) {
 
   let index = -1;
   for(let token of PRECEDING_TOKENS) {
-    index = line.text.lastIndexOf(token, cursorPlacement.character);
-    if (index !== -1) {
-      break;
+    const currentIndex = line.text.lastIndexOf(token, cursorPlacement.character);
+    if (currentIndex !== -1 && currentIndex > index) {
+      index = currentIndex;
     }
   }
 
@@ -112,8 +117,9 @@ function parseName(lineNumber: number, match:RegExpMatchArray):HoistParams|null 
   let shortName = match[6];
   let moduleName = match[3];
   let hoisted = `${moduleName}.${shortName}`;
+  let enumValue = undefined;
   if (match[8]) {
-    shortName += `.${match[8]}`;
+    enumValue = match[8];
   }
 
   let precedingOffset = 1;
@@ -127,31 +133,97 @@ function parseName(lineNumber: number, match:RegExpMatchArray):HoistParams|null 
     lineNumber,
     hoisted,
     moduleName,
-    shortName
+    shortName,
+    enumValue
   };
 }
 
-export function listConflicts(targets: HoistParams[]): Conflicts {
+export function findConflicts(targets: HoistParams[], imports:Imports): Conflicts {
   let conflicts: Conflicts = new Map();
-  for (let target of targets) {
-    if (!conflicts.has(target.shortName)) {
-      conflicts.set(target.shortName, { count: 0, conflicts: [] });
-    }
 
-    const conflictList = conflicts.get(target.shortName)!;
-    if (conflictList.conflicts.filter(el => (el.hoisted === target.hoisted)).length === 0) {
-      conflictList.conflicts.push(target);
-      conflictList.count += 1;
-    }
+  for (let imp of imports.unique.values()) {
+    parseConflict(imp, conflicts);
   }
 
-  for (let [key, conflict] of conflicts.entries()) {
-    if (conflict.count === 1) {
-      conflicts.delete(key);
+  for (let target of targets) {
+    parseConflict(target, conflicts);
+  }
+
+  for (let conflict of conflicts.values()) {
+    let i = 0;
+    for (let single of conflict.conflicts) {
+      // @TODO: What to do with conflicting wildcards?
+      if (imports.wildcards.has(single.moduleName)) {
+        i += 1;
+      }
+    }
+
+    for (let single of conflict.conflicts) {
+      if (single.alias || i++ === 0) {
+        continue;
+      }
+     
+      single.alias = `${single.shortName}_${i}`;
     }
   }
 
   return conflicts;
+}
+
+function parseConflict(source: ImportMeta, conflicts:Conflicts) {
+  if (!conflicts.has(source.shortName)) {
+    conflicts.set(source.shortName, { count: 0, conflicts: [] });
+  }
+
+  const conflictList = conflicts.get(source.shortName)!;
+  if (conflictList.conflicts.filter(el => (el.hoisted === source.hoisted)).length === 0) {
+    conflictList.conflicts.push(source);
+    conflictList.count += 1;
+  }
+}
+
+function applyAlias(target:HoistParams, alias:string) {
+  target.shortName = alias;
+  target.hoisted = `${target.moduleName}.${target.shortName} as ${alias}`;
+}
+
+function resolveConflicts(targets:HoistParams[], imports:Imports, conflicts:Conflicts, duplicatesAction:DuplicatesAction) {
+  for (let [i, target] of targets.entries()) {
+    if (!conflicts.has(target.shortName)) {
+      continue;
+    }
+
+    const conflict = conflicts.get(target.shortName)!;
+    const alias = findAlias(target, conflict.conflicts);
+
+    if (duplicatesAction === DuplicatesAction.SKIP && !alias) {
+      delete targets[i];
+    } else if (duplicatesAction === DuplicatesAction.ALIAS) {
+      if (!imports.wildcards.has(target.moduleName) && alias) {
+        applyAlias(target, alias);
+      }
+    }
+
+    // conflict.conflicts = conflict.conflicts.filter(single => single.moduleName !== target.moduleName);
+  }
+
+  if (duplicatesAction === DuplicatesAction.SKIP) {
+    for (let i = 0; i < targets.length; ++i) {
+      if(targets[i] === undefined) {
+        targets.splice(i--, 1);
+      }
+    }
+  }
+}
+
+function findAlias(target:HoistParams, modules:ImportMeta[]) {
+  for(let single of modules) {
+    if (target.moduleName === single.moduleName) {
+      return single.alias;
+    }
+  }
+
+  return false;
 }
 
 async function prepareHoistEdits(editor: TextEditor, sourceTargets: HoistParams[] | HoistParams) {
@@ -163,8 +235,7 @@ async function prepareHoistEdits(editor: TextEditor, sourceTargets: HoistParams[
   }
 
   let allImports = enumerateImports(editor);
-
-  const conflicts = listConflicts(targets);
+  const conflicts = findConflicts(targets, allImports);
 
   let conflictMessages = [];
 
@@ -207,62 +278,44 @@ async function prepareHoistEdits(editor: TextEditor, sourceTargets: HoistParams[
 
 export function applyHoistsToFile(editor: TextEditor, targets:HoistParams[], imports:Imports, conflicts:Conflicts, duplicatesAction: DuplicatesAction) {
   editor.edit((builder) => {
-    let total = 0;
-    let unchangedTotal = 0;
-    let duplicateImports = new Set();
-    let lastConflictMeta = {
-      aliasNumber: 0,
-      moduleName: '',
-    };
+    resolveConflicts(targets, imports, conflicts, duplicatesAction);
 
     for (let target of targets) {
-      let shortName = target.shortName;
-      let hoistedName = target.hoisted;
-      const containedWithinAWildcard = imports.wildcards.has(target.moduleName);
-
-      if (conflicts.has(target.shortName)) {
-        const conflict = conflicts.get(target.shortName)!;
-        if (duplicatesAction === DuplicatesAction.SKIP) {
-          unchangedTotal += 1;
-          continue;
-        } else if (duplicatesAction === DuplicatesAction.ALIAS) {
-          let i = conflict.count - conflict.conflicts.length;
-          if (target.moduleName === lastConflictMeta.moduleName) {
-            i = lastConflictMeta.aliasNumber;
-          }
-          lastConflictMeta = {
-            aliasNumber: i,
-            moduleName: target.moduleName,
-          };
-          if (!containedWithinAWildcard) {
-            if (i !== 0) {
-              const alias = `_${i}`;
-              shortName += alias;
-              hoistedName += ` as ${shortName}`;
-            }
-          }
-          conflict.conflicts.shift();
-        }
+      let fullName = target.shortName;
+      if (target.enumValue) {
+        fullName += `.${target.enumValue}`;
       }
 
       builder.replace(new Range(
         new Position(target.lineNumber, target.startIndex),
         new Position(target.lineNumber, target.startIndex + target.replaceLength)
-      ), shortName);
-
-      if (!duplicateImports.has(hoistedName) && !imports.unique.has(hoistedName) && !containedWithinAWildcard) {
-        total += 1;
-        duplicateImports.add(hoistedName);
-
-        builder.insert(new Position(imports.lastImportLine + 1, 0), `import ${hoistedName};\n`);
-      } else {
-        unchangedTotal += 1;
-      }
+      ), fullName);
     }
 
-    window.showInformationMessage(`Created ${total} imports, skipped ${unchangedTotal} already existing, or conflicting.`);
+    let [skipped, inserted] = applyImportsToFile(builder, targets, imports);
+    window.showInformationMessage(`Hoisted ${targets.length} imports - created ${inserted} new, and skipped ${skipped}`);
   })
   ;
+}
+
+function applyImportsToFile(builder:TextEditorEdit, targets:HoistParams[], imports:Imports) {
+  let inserted = 0;
+  let skipped = 0;
+  let duplicates = new Set();
+
+  for (const target of targets) {
+    if (duplicates.has(target.hoisted) || imports.wildcards.has(target.moduleName)) {
+      skipped += 1;
+    } else {
+      const line = `import ${target.hoisted};\n`;
+      builder.insert(new Position(imports.lastImportLine + 1, 0), line);
+      inserted += 1;
+
+      duplicates.add(target.hoisted);
+    }
+  }
+
+  return [skipped, inserted];
 }
 
 function notifyNoneFound() {
@@ -272,7 +325,7 @@ function notifyNoneFound() {
 export function enumerateImports(editor: TextEditor): Imports {
   const lines = editor.document.getText().split("\n").filter(el => el !== '').map(el => el.trim());
 
-  let unique = new Set();
+  let unique = new Map();
   let wildcards = new Set();
   let lastImportLine = 0;
 
@@ -285,9 +338,15 @@ export function enumerateImports(editor: TextEditor): Imports {
       break;
     }
 
-    const name = line.split(' ')[1].slice(0, -1).trim();
+    const lineParts = line.split(' ');
+    if (!lineParts.every(part => part !== 'in')) {
+      continue;
+    }
+    let name = lineParts[1];
+    name = name.split(';')[0].trim();
+
     const parts = name.split('.');
-    const lastPart = parts[parts.length - 1];
+    const lastPart = parts.slice(-1)[0];
     const modulePath = parts.slice(0, -1).join('.');
     if (wildcards.has(modulePath) || unique.has(name)) {
       continue;
@@ -297,7 +356,17 @@ export function enumerateImports(editor: TextEditor): Imports {
       wildcards.add(modulePath);
     }
 
-    unique.add(name);
+    let item: ImportMeta = {
+      moduleName: modulePath,
+      shortName: lastPart,
+      hoisted: name
+    };
+
+    if (lineParts.length > 2) {
+      item.alias = lineParts.slice(-1)[0].split(';')[0];
+    }
+
+    unique.set(name, item);
     lastImportLine = i;
   }
 
