@@ -37,15 +37,20 @@ export function order() {
   startSorting(editor, sortType, groupType, separateWildcards);
 }
 
-export function startSorting(editor:TextEditor, sortType:SortType, groupType:GroupType, separateWildcards:boolean) {
+export async function startSorting(editor:TextEditor, sortType:SortType, groupType:GroupType, separateWildcards:boolean) {
   const text = editor.document.getText();
   const sourceImports = enumerateImports(text);
   const packageRoot = getCurrentPackageRoot(text);
   const sortedImports = sort(sourceImports, sortType);
   const groupedImports = group(sortedImports, packageRoot, separateWildcards, groupType);
 
-  editor.edit((builder) => {
+  await editor.edit((builder) => {
     removeImports(builder, sourceImports);
+  });
+
+  // There does not seem to exist an option to get this in one edit-pass. Shame
+  editor.edit((builder) => {
+    clearWhitespace(builder, editor.document.getText(), sourceImports.firstImportLine);
     insertImports(builder, sourceImports.firstImportLine, groupedImports);
   });
 }
@@ -66,10 +71,12 @@ function insertImports(builder:TextEditorEdit, insertPoint:number, source:Import
       line += ';\n';
       builder.insert(new Position(insertPoint, 0), line);
     }
+
     if (group.length > 0) {
       builder.insert(new Position(insertPoint, 0), '\n');
     }
   }
+
   // builder.insert(new Position(insertPoint, 0), '\n');
 }
 
@@ -144,4 +151,20 @@ function group(source:ImportMeta[], packageRoot:(string | null), separateWildcar
   }
 
   return groups;
+}
+
+function clearWhitespace(builder:TextEditorEdit, text:string, startLine:number) {
+  for(let [i, line] of text.split('\n').entries()) {
+    if (i < startLine) {
+      continue;
+    }
+    
+    line = line.trim();
+
+    if (line === '') {
+      builder.delete(new Range(i, 0, i + 1, 0));
+    } else {
+      break;
+    }
+  }
 }

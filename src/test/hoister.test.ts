@@ -36,7 +36,7 @@ describe('Hoister tests', () => {
     
     assert.equal(editor.document.getText(), aliasedDocument.getText());
 
-    sorter.startSorting(editor, sorter.SortType.ALPHABETIC, sorter.GroupType.SEPARATE_DEPENDENCIES, true);
+    await sorter.startSorting(editor, sorter.SortType.ALPHABETIC, sorter.GroupType.SEPARATE_DEPENDENCIES, true);
     const orderedDocument = await workspace.openTextDocument(getByFilename(files, ALIASED_ORDERED_FILE));
     assert.equal(editor.document.getText(), orderedDocument.getText());
   });
