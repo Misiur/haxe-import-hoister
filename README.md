@@ -15,3 +15,7 @@ Initial release of the extension
 ### 0.0.2
 
 Fixed aliases resolution in most cases
+
+### 0.0.3
+
+Added import sorting with new commands

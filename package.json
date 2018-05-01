@@ -2,7 +2,7 @@
     "name": "haxe-import-hoister",
     "displayName": "haxe-import-hoister",
     "description": "",
-    "version": "0.0.1",
+    "version": "0.0.3",
     "publisher": "Misiur",
     "engines": {
         "vscode": "^1.22.0"
@@ -11,22 +11,47 @@
         "Other"
     ],
     "activationEvents": [
-        "*"
+        "onLanguage:haxe"
     ],
     "main": "./out/extension",
     "contributes": {
+        "configuration": {
+            "type": "object",
+            "title": "Haxe import hoster configuration",
+            "properties": {
+                "haxe.hoister.importSeparationType": {
+                    "type": "string",
+                    "default": "clumped",
+                    "description": "Method used for grouping imports - Available: \"clumped\" or \"separate-deps\""
+                },
+                "haxe.hoister.importSortingType": {
+                    "type": "string",
+                    "default": "alphabetic",
+                    "description": "Method used for sorting imports - Available: \"alphabetic\" or \"none\""
+                },
+                "haxe.hoister.importSeparateWildcards": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Flag determining if wildcards will be separated on top"
+                }
+            }
+        },
         "commands": [
             {
                 "command": "hoister.hoistCurrent",
-                "title": "Hoist current import to the top"
+                "title": "Haxe: Hoist current import to the top"
             },
             {
                 "command": "hoister.hoistLine",
-                "title": "Hoist all imports in current line to the top"
+                "title": "Haxe: Hoist all imports in current line to the top"
             },
             {
                 "command": "hoister.hoistFile",
-                "title": "Hoist all imports in current file"
+                "title": "Haxe: Hoist all imports in current file"
+            },
+            {
+                "command": "sorter.order",
+                "title": "Haxe: Order imports"
             }
         ],
         "keybindings": [

@@ -1,10 +1,13 @@
 import * as assert from 'assert';
 import * as hoister from '../hoister';
+import * as sorter from '../sorter';
+import * as importUtils from '../importUtils';
 import { window, workspace, TextEditor, Uri } from 'vscode';
 import { basename } from 'path';
 
 const SOURCE_FILE = 'mockHaxe.hx';
 const ALIASED_FILE = 'mockAliasedHoistedHaxe.hx';
+const ALIASED_ORDERED_FILE = 'mockAliasedOrderedHaxe.hx';
 
 function getByFilename(files:Uri[], fileName:string) {
   return files.find(file => basename(file.path) === fileName)!;
@@ -20,9 +23,10 @@ describe('Hoister tests', () => {
   });
 
   it('should not break on updates', async () => {
-    const imports = hoister.enumerateImports(editor);
+    const document = editor.document.getText();
+    const imports = importUtils.enumerateImports(document);
     let targets: hoister.HoistParams[] = [];
-    for (let [i, text] of editor.document.getText().split('\n').entries()) {
+    for (let [i, text] of document.split('\n').entries()) {
       targets = targets.concat(hoister.matchPattern(text, i));
     }
     const conflicts = hoister.findConflicts(targets, imports);
@@ -31,5 +35,9 @@ describe('Hoister tests', () => {
     const aliasedDocument = await workspace.openTextDocument(getByFilename(files, ALIASED_FILE));
     
     assert.equal(editor.document.getText(), aliasedDocument.getText());
+
+    sorter.startSorting(editor, sorter.SortType.ALPHABETIC, sorter.GroupType.SEPARATE_DEPENDENCIES, true);
+    const orderedDocument = await workspace.openTextDocument(getByFilename(files, ALIASED_ORDERED_FILE));
+    assert.equal(editor.document.getText(), orderedDocument.getText());
   });
 });

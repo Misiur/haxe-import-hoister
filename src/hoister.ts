@@ -1,18 +1,10 @@
 'use strict';
 
 import { window, Range, Position, TextEditor, TextEditorEdit } from 'vscode';
+import { Imports, ImportMeta, enumerateImports } from './importUtils';
 
 const PRECEDING_TOKENS = [':', '<', ','];
 const CLASS_REGEX = /[:<\,](\s?)((([a-z]([0-9a-z_]+)\.?)+)\.([A-Za-z_]\w*)(\.([A-Z_][A-Z_]+))?)\s?(?:[\),>;=\{]|$)/g;
-const SKIP_REGEX = /^package|using|#|\*|\//i;
-
-type ImportMeta = {
-  hoisted:string;
-  moduleName:string;
-  shortName: string;
-  enumValue?: string;
-  alias?: string;
-};
 
 export type HoistParams = {
   startIndex: number;
@@ -21,12 +13,6 @@ export type HoistParams = {
 } & ImportMeta;
 
 type Conflicts = Map<string, { count: number, conflicts: ImportMeta[] }>;
-
-type Imports = {
-  unique: Map<string, ImportMeta>;
-  wildcards:Set<string>;
-  lastImportLine:number;
-};
 
 export enum HoistMode {
   CURRENT = 'current',
@@ -246,7 +232,7 @@ async function prepareHoistEdits(editor: TextEditor, sourceTargets: HoistParams[
     targets = sourceTargets;
   }
 
-  let allImports = enumerateImports(editor);
+  let allImports = enumerateImports(editor.document.getText());
   const conflicts = findConflicts(targets, allImports);
 
   let conflictMessages = [];
@@ -332,61 +318,6 @@ function applyImportsToFile(builder:TextEditorEdit, targets:HoistParams[], impor
 
 function notifyNoneFound() {
   window.showInformationMessage('No hoistable imports found');
-}
-
-export function enumerateImports(editor: TextEditor): Imports {
-  const lines = editor.document.getText().split("\n").filter(el => el !== '').map(el => el.trim());
-
-  let unique = new Map();
-  let wildcards = new Set();
-  let lastImportLine = 0;
-
-  for (let [i, line] of lines.entries()) {
-    if(!line.startsWith('import')) {
-      if (line === '' || SKIP_REGEX.test(line)) {
-        continue;
-      }
-
-      break;
-    }
-
-    const lineParts = line.split(' ');
-    if (!lineParts.every(part => part !== 'in')) {
-      continue;
-    }
-    let name = lineParts[1];
-    name = name.split(';')[0].trim();
-
-    const parts = name.split('.');
-    const lastPart = parts.slice(-1)[0];
-    const modulePath = parts.slice(0, -1).join('.');
-    if (wildcards.has(modulePath) || unique.has(name)) {
-      continue;
-    }
-
-    if (lastPart === '*') {
-      wildcards.add(modulePath);
-    }
-
-    let item: ImportMeta = {
-      moduleName: modulePath,
-      shortName: lastPart,
-      hoisted: name
-    };
-
-    if (lineParts.length > 2) {
-      item.alias = lineParts.slice(-1)[0].split(';')[0];
-    }
-
-    unique.set(name, item);
-    lastImportLine = i;
-  }
-
-  return {
-    lastImportLine,
-    unique,
-    wildcards
-  };
 }
 
 export function hoist(type: HoistMode) {

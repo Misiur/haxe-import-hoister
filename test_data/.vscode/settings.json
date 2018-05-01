@@ -1,0 +1,4 @@
+{
+  "haxe.hoister.importSeparationType": "separate-deps",
+  "haxe.hoister.importSortingType": "alphabetic"
+}
