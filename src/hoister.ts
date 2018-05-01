@@ -3,8 +3,8 @@
 import { window, Range, Position, TextEditor, TextEditorEdit } from 'vscode';
 import { Imports, ImportMeta, enumerateImports } from './importUtils';
 
-const PRECEDING_TOKENS = [':', '<', ','];
-const CLASS_REGEX = /[:<\,](\s?)((([a-z]([0-9a-z_]+)\.?)+)\.([A-Za-z_]\w*)(\.([A-Z_][A-Z_]+))?)\s?(?:[\),>;=\{]|$)/g;
+const PRECEDING_TOKENS = [':', '<', ',', '('];
+const CLASS_REGEX = /[:<\,\(](\s?)((([a-z]([0-9a-z_]+)\.?)+)\.([A-Za-z_]\w*)(\.([A-Z_][A-Z_]+))?)\s?(?:[\),>;=\{]|$)/g;
 
 export type HoistParams = {
   startIndex: number;
