@@ -23,3 +23,7 @@ Added import sorting with new commands
 ### 0.0.4
 
 Fixed extraneous newlines after ordering imports
+
+### 0.0.6
+
+Allowed more preceding characters and fixed already-aliased imports.
