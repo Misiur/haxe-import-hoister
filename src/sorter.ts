@@ -95,22 +95,22 @@ function matchValueToEnum<E>(value:string, e:any):(E | null) {
 function sort(source: Imports, type: SortType): ImportMeta[] {
   const imports = [...source.unique.values()].sort((a, b) => {
     const WILDCARD_WEIGHT = 1e7;
-    let aWeigth = 0;
-    let bWeigth = 0;
+    let aWeight = 0;
+    let bWeight = 0;
     if (a.shortName === '*') {
-      aWeigth -= WILDCARD_WEIGHT;
+      aWeight -= WILDCARD_WEIGHT;
     }
     if (b.shortName === '*') {
-      bWeigth -= WILDCARD_WEIGHT;
+      bWeight -= WILDCARD_WEIGHT;
     }
 
     if (a.hoisted > b.hoisted) {
-      aWeigth += 1;
+      aWeight += 1;
     } else if (a.hoisted < b.hoisted) {
-      bWeigth += 1;
+      bWeight += 1;
     }
 
-    return aWeigth - bWeigth;
+    return aWeight - bWeight;
   });
 
   return imports;

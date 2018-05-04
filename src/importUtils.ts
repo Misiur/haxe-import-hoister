@@ -64,6 +64,8 @@ export function enumerateImports(text:string): Imports {
 
     if (lineParts.length > 2) {
       item.alias = lineParts.slice(-1)[0].split(';')[0];
+    } else {
+      item.alias = lastPart;
     }
 
     unique.set(name, item);

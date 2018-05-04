@@ -3,8 +3,8 @@
 import { window, Range, Position, TextEditor, TextEditorEdit } from 'vscode';
 import { Imports, ImportMeta, enumerateImports } from './importUtils';
 
-const PRECEDING_TOKENS = [':', '<', ',', '('];
-const CLASS_REGEX = /[:<\,\(](\s?)((([a-z]([0-9a-z_]+)\.?)+)\.([A-Za-z_]\w*)(\.([A-Z_][A-Z_]+))?)\s?(?:[\),>;=\{]|$)/g;
+const PRECEDING_TOKENS = [':', '<', ',', '(', '=', 'new'];
+const CLASS_REGEX = /(@:\w+\s*)?(^|[:<,(=]|(?:new))(\s*)((([a-z]([0-9a-z_]*)\.?)+)\.([A-Za-z_]\w*)(\.([A-Z_][A-Z_]+))?)\s*([(),>;={]|$)/gm;
 
 export type HoistParams = {
   startIndex: number;
@@ -30,17 +30,12 @@ function hoistCurrent(editor: TextEditor) {
   const cursorPlacement = editor.selection.active;
   const line = editor.document.lineAt(cursorPlacement.line);
 
-  let index = -1;
+  let index = 0;
   for(let token of PRECEDING_TOKENS) {
     const currentIndex = line.text.lastIndexOf(token, cursorPlacement.character);
     if (currentIndex !== -1 && currentIndex > index) {
       index = currentIndex;
     }
-  }
-
-  if (index === -1) {
-    notifyNoneFound();
-    return;
   }
 
   const match = CLASS_REGEX.exec(line.text.substr(index));
@@ -100,22 +95,30 @@ export function matchPattern(text:string, lineNumber:number) {
 }
 
 function parseName(lineNumber: number, match:RegExpMatchArray):HoistParams|null {
-  let shortName = match[6];
-  let moduleName = match[3];
+  let shortName = match[8];
+  let moduleName = match[5];
   let hoisted = `${moduleName}.${shortName}`;
   let enumValue = undefined;
-  if (match[8]) {
-    enumValue = match[8];
+  if (match[10]) {
+    enumValue = match[10];
   }
 
-  let precedingOffset = 1;
+  let precedingOffset = match[2].length;
+  if (match[3]) {
+    precedingOffset += match[3].length;
+  }
+
   if (match[1]) {
-    precedingOffset += 1;
+    return null;
+  }
+
+  if (match[2] !== 'new' && match[11] === '(') {
+    return null;
   }
 
   return {
     startIndex: match.index! + precedingOffset,
-    replaceLength: match[2].length,
+    replaceLength: match[4].length,
     lineNumber,
     hoisted,
     moduleName,
@@ -127,44 +130,73 @@ function parseName(lineNumber: number, match:RegExpMatchArray):HoistParams|null 
 export function findConflicts(targets: HoistParams[], imports:Imports): Conflicts {
   let conflicts: Conflicts = new Map();
 
-  for (let imp of imports.unique.values()) {
-    parseConflict(imp, conflicts);
-  }
-
   for (let target of targets) {
     parseConflict(target, conflicts);
   }
 
-  for (let conflict of conflicts.values()) {
-    let i = 0;
-    for (let single of conflict.conflicts) {
-      // @TODO: What to do with conflicting wildcards?
-      if (imports.wildcards.has(single.moduleName)) {
-        i += 1;
+  for (let imp of imports.unique.values()) {
+    parseConflict(imp, conflicts, true);
+  }
+
+  for (const conflict of conflicts.values()) {
+    let aliasNum = 0;
+    conflict.conflicts.forEach(el => {
+      if (el.alias) {
+        const num = parseInt(el.alias.split('_')[1], 10) || 0;
+        if (num >= aliasNum) {
+          aliasNum = num + 1;
+        }
+      }
+    });
+
+    if (!aliasNum) {
+      for (let single of conflict.conflicts) {
+        // @TODO: What to do with conflicting wildcards?
+        if (imports.wildcards.has(single.moduleName)) {
+          aliasNum += 1;
+        }
       }
     }
 
     for (let single of conflict.conflicts) {
-      if (single.alias || i++ === 0) {
+      if (imports.wildcards.has(single.moduleName) || single.alias) {
         continue;
       }
      
-      single.alias = `${single.shortName}_${i}`;
+      if (aliasNum > 0) {
+        single.alias = `${single.shortName}_${aliasNum}`;
+      }
+
+      aliasNum++;
     }
   }
 
   return conflicts;
 }
 
-function parseConflict(source: ImportMeta, conflicts:Conflicts) {
+function parseConflict(source: ImportMeta, conflicts:Conflicts, importMode:boolean = false) {
   if (!conflicts.has(source.shortName)) {
+    if (importMode) {
+      return;
+    }
+
     conflicts.set(source.shortName, { count: 0, conflicts: [] });
   }
 
   const conflictList = conflicts.get(source.shortName)!;
-  if (conflictList.conflicts.filter(el => (el.hoisted === source.hoisted)).length === 0) {
-    conflictList.conflicts.push(source);
+  const namespacedConflicts = conflictList.conflicts;
+  const duplicateConflicts = namespacedConflicts.filter(el => el.hoisted === source.hoisted);
+
+  if (duplicateConflicts.length === 0) {
+    namespacedConflicts.push(source);
     conflictList.count += 1;
+  } else if (duplicateConflicts.length === 1) {
+    const conflict = duplicateConflicts[0];
+    if (!conflict.alias && source.alias) {
+      namespacedConflicts.splice(namespacedConflicts.indexOf(conflict), 1);
+      namespacedConflicts.push(source);
+      conflictList.count += 1;
+    }
   }
 }
 
@@ -201,7 +233,6 @@ function resolveConflicts(targets:HoistParams[], imports:Imports, conflicts:Conf
       applyAlias(target, <string> alias);
     }
   }
-
   
   if (duplicatesAction === DuplicatesAction.SKIP) {
     for (let i = 0; i < targets.length; ++i) {
@@ -215,7 +246,7 @@ function resolveConflicts(targets:HoistParams[], imports:Imports, conflicts:Conf
 }
 
 function findAlias(target:HoistParams, modules:ImportMeta[]) {
-  for(let single of modules) {
+  for (let single of modules) {
     if (target.moduleName === single.moduleName) {
       return single.alias;
     }
