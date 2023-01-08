@@ -13,31 +13,31 @@ export enum GroupType {
   SEPARATE_DEPENDENCIES = 'separate-deps'
 }
 
-export function order() {
-  let editor = window.activeTextEditor;
-  if (!editor) {
+export function order(): void {
+  const editor = window.activeTextEditor;
+  if (editor == null) {
     return;
   }
 
   const config = workspace.getConfiguration('haxe.hoister');
-  let sortType = matchValueToEnum<SortType>(config.importSortingType, SortType);
-  if (!sortType) {
-    window.showInformationMessage('Configuration value for `haxe.hoister.importSortingType` is invalid.');
+  const sortType = matchValueToEnum<SortType>(config.importSortingType, SortType);
+  if (sortType == null) {
+    void window.showInformationMessage('Configuration value for `haxe.hoister.importSortingType` is invalid.');
     return;
   }
 
-  let groupType = matchValueToEnum<GroupType>(config.importSeparationType, GroupType);
-  if (!groupType) {
-    window.showInformationMessage('Configuration value for `haxe.hoister.importSeparationType` is invalid.');
+  const groupType = matchValueToEnum<GroupType>(config.importSeparationType, GroupType);
+  if (groupType == null) {
+    void window.showInformationMessage('Configuration value for `haxe.hoister.importSeparationType` is invalid.');
     return;
   }
 
-  let separateWildcards = config.importSeparateWildcards;
+  const separateWildcards = config.importSeparateWildcards;
 
-  startSorting(editor, sortType, groupType, separateWildcards);
+  void startSorting(editor, sortType, groupType, separateWildcards);
 }
 
-export async function startSorting(editor:TextEditor, sortType:SortType, groupType:GroupType, separateWildcards:boolean) {
+export async function startSorting(editor: TextEditor, sortType: SortType, groupType: GroupType, separateWildcards: boolean) {
   const text = editor.document.getText();
   const sourceImports = enumerateImports(text);
   const packageRoot = getCurrentPackageRoot(text);
@@ -49,23 +49,23 @@ export async function startSorting(editor:TextEditor, sortType:SortType, groupTy
   });
 
   // There does not seem to exist an option to get this in one edit-pass. Shame
-  editor.edit((builder) => {
+  void editor.edit((builder) => {
     clearWhitespace(builder, editor.document.getText(), sourceImports.firstImportLine);
     insertImports(builder, sourceImports.firstImportLine, groupedImports);
   });
 }
 
-function removeImports(builder:TextEditorEdit, source:Imports) {
+function removeImports(builder: TextEditorEdit, source: Imports) {
   for (const item of source.unique.values()) {
     builder.delete(new Range(item.lineNumber!, 0, item.lineNumber! + 1, 0));
   }
 }
 
-function insertImports(builder:TextEditorEdit, insertPoint:number, source:ImportMeta[][]) {
+function insertImports(builder: TextEditorEdit, insertPoint: number, source: ImportMeta[][]) {
   for (const group of source) {
     for (const imp of group) {
       let line = `import ${imp.hoisted}`;
-      if (imp.alias) {
+      if (imp.alias != null) {
         line += ` as ${imp.alias}`;
       }
       line += ';\n';
@@ -80,7 +80,7 @@ function insertImports(builder:TextEditorEdit, insertPoint:number, source:Import
   // builder.insert(new Position(insertPoint, 0), '\n');
 }
 
-function matchValueToEnum<E>(value:string, e:any):(E | null) {
+function matchValueToEnum<E>(value: string, e: any):(E | null) {
   for (const key in e) {
     if (value !== e[key]) {
       continue;
@@ -116,10 +116,10 @@ function sort(source: Imports, type: SortType): ImportMeta[] {
   return imports;
 }
 
-function group(source:ImportMeta[], packageRoot:(string | null), separateWildcards:boolean, type: GroupType): ImportMeta[][] {
+function group(source: ImportMeta[], packageRoot:(string | null), separateWildcards: boolean, type: GroupType): ImportMeta[][] {
   let groups: ImportMeta[][] = [];
 
-  if (type === GroupType.SEPARATE_DEPENDENCIES && packageRoot) {
+  if (type === GroupType.SEPARATE_DEPENDENCIES && packageRoot != null && packageRoot.length > 0) {
     // 0? -> wildcards
     // 1  -> dependencies
     // 2  -> own
@@ -153,12 +153,12 @@ function group(source:ImportMeta[], packageRoot:(string | null), separateWildcar
   return groups;
 }
 
-function clearWhitespace(builder:TextEditorEdit, text:string, startLine:number) {
-  for(let [i, line] of text.split('\n').entries()) {
+function clearWhitespace(builder: TextEditorEdit, text: string, startLine: number) {
+  for (let [i, line] of text.split('\n').entries()) {
     if (i < startLine) {
       continue;
     }
-    
+
     line = line.trim();
 
     if (line === '') {
