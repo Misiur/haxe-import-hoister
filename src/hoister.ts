@@ -13,6 +13,7 @@ export type HoistParams = {
 } & ImportMeta;
 
 type Conflicts = Map<string, { count: number, conflicts: ImportMeta[] }>;
+type Alias = string | null;
 
 export enum HoistMode {
   CURRENT = 'current',
@@ -144,7 +145,7 @@ export function findConflicts(targets: HoistParams[], imports: Imports): Conflic
   for (const conflict of conflicts.values()) {
     let aliasNum = 0;
     conflict.conflicts.forEach(el => {
-      if (el.alias?.length > 0) {
+      if (el.alias != null && el.alias != '') {
         const num = parseInt(el.alias.split('_')[1], 10) ?? 0;
         if (num >= aliasNum) {
           aliasNum = num + 1;
@@ -152,7 +153,7 @@ export function findConflicts(targets: HoistParams[], imports: Imports): Conflic
       }
     });
 
-    if (!aliasNum) {
+    if (aliasNum == 0) {
       for (const single of conflict.conflicts) {
         // @TODO: What to do with conflicting wildcards?
         if (imports.wildcards.has(single.moduleName)) {
@@ -162,7 +163,7 @@ export function findConflicts(targets: HoistParams[], imports: Imports): Conflic
     }
 
     for (const single of conflict.conflicts) {
-      if (imports.wildcards.has(single.moduleName) || single.alias) {
+      if (imports.wildcards.has(single.moduleName) || (single.alias != null && single.alias != '')) {
         continue;
       }
 
@@ -195,7 +196,7 @@ function parseConflict(source: ImportMeta, conflicts: Conflicts, importMode = fa
     conflictList.count += 1;
   } else if (duplicateConflicts.length === 1) {
     const conflict = duplicateConflicts[0];
-    if (!conflict.alias && source.alias) {
+    if (conflict.alias == null && source.alias != null && source.alias != '') {
       namespacedConflicts.splice(namespacedConflicts.indexOf(conflict), 1);
       namespacedConflicts.push(source);
       conflictList.count += 1;
@@ -220,14 +221,15 @@ function resolveConflicts(targets: HoistParams[], imports: Imports, conflicts: C
 
     let shouldAlias = false;
     if (duplicatesAction === DuplicatesAction.SKIP) {
-      if (alias && !(new RegExp(`${target.shortName}_\\d+`).test(alias))) {
+      if (alias != null && !(new RegExp(`${target.shortName}_\\d+`).test(alias))) {
         shouldAlias = true;
       } else if (conflict.count > 1) {
         skipped += 1;
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
         delete targets[i];
       }
     } else if (duplicatesAction === DuplicatesAction.ALIAS) {
-      if (!imports.wildcards.has(target.moduleName) && alias) {
+      if (!imports.wildcards.has(target.moduleName) && alias != null && alias != '') {
         shouldAlias = true;
       }
     }
@@ -249,14 +251,14 @@ function resolveConflicts(targets: HoistParams[], imports: Imports, conflicts: C
   return skipped;
 }
 
-function findAlias(target: HoistParams, modules: ImportMeta[]): string | boolean {
+function findAlias(target: HoistParams, modules: ImportMeta[]): Alias {
   for (const single of modules) {
     if (target.moduleName === single.moduleName) {
-      return single.alias;
+      return single.alias ?? null;
     }
   }
 
-  return false;
+  return null;
 }
 
 async function prepareHoistEdits(editor: TextEditor, sourceTargets: HoistParams[] | HoistParams): Promise<void> {
@@ -314,8 +316,8 @@ export function applyHoistsToFile(editor: TextEditor, targets: HoistParams[], im
     const skipped = resolveConflicts(targets, imports, conflicts, duplicatesAction);
 
     for (const target of targets) {
-      let fullName = target.alias ? target.alias : target.shortName;
-      if (target.enumValue) {
+      let fullName = target.alias != null ? target.alias : target.shortName;
+      if (target.enumValue != null) {
         fullName += `.${target.enumValue}`;
       }
 
@@ -326,7 +328,7 @@ export function applyHoistsToFile(editor: TextEditor, targets: HoistParams[], im
     }
 
     const [duplicates, inserted] = applyImportsToFile(builder, targets, imports);
-    window.showInformationMessage(`Hoisted ${targets.length} imports - created ${inserted} new, skipped ${duplicates} duplicates, and skipped ${skipped} conflicts`);
+    void window.showInformationMessage(`Hoisted ${targets.length} imports - created ${inserted} new, skipped ${duplicates} duplicates, and skipped ${skipped} conflicts`);
   })
   ;
 }

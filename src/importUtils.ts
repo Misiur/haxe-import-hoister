@@ -1,30 +1,30 @@
 const SKIP_REGEX = /^package|using|#|\*|\//i;
 
-export type Imports = {
-  unique: Map<string, ImportMeta>;
-  wildcards: Set<string>;
-  firstImportLine: number;
-  lastImportLine: number;
-};
+export interface Imports {
+  unique: Map<string, ImportMeta>
+  wildcards: Set<string>
+  firstImportLine: number
+  lastImportLine: number
+}
 
-export type ImportMeta = {
-  hoisted: string;
-  moduleName: string;
-  shortName: string;
-  lineNumber?: number;
-  enumValue?: string;
-  alias?: string;
-};
+export interface ImportMeta {
+  hoisted: string
+  moduleName: string
+  shortName: string
+  lineNumber?: number
+  enumValue?: string
+  alias?: string
+}
 
-export function enumerateImports(text:string): Imports {
-  const lines = text.split("\n").map(el => el.trim());
+export function enumerateImports(text: string): Imports {
+  const lines = text.split('\n').map(el => el.trim());
 
-  let unique = new Map();
-  let wildcards = new Set();
+  const unique = new Map<string, ImportMeta>();
+  const wildcards = new Set<string>();
   let lastImportLine = 0;
   let firstImportLine = 0;
 
-  for (let [i, line] of lines.entries()) {
+  for (const [i, line] of lines.entries()) {
     if (!line.startsWith('import')) {
       if (line === '' || SKIP_REGEX.test(line)) {
         continue;
@@ -33,7 +33,7 @@ export function enumerateImports(text:string): Imports {
       break;
     }
 
-    if (!firstImportLine) {
+    if (firstImportLine == 0) {
       firstImportLine = i;
     }
 
@@ -55,7 +55,7 @@ export function enumerateImports(text:string): Imports {
       wildcards.add(modulePath);
     }
 
-    let item: ImportMeta = {
+    const item: ImportMeta = {
       moduleName: modulePath,
       shortName: lastPart,
       hoisted: name,
@@ -80,9 +80,9 @@ export function enumerateImports(text:string): Imports {
   };
 }
 
-export function getCurrentPackageRoot(source:string) {
-  for (let line of source.split('\n')) {
-    let trimmed = line.trim();
+export function getCurrentPackageRoot(source: string): string | null {
+  for (const line of source.split('\n')) {
+    const trimmed = line.trim();
     if (trimmed.startsWith('package')) {
       const parts = trimmed.split(' ');
       if (parts.length === 1) {
