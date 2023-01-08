@@ -7,9 +7,9 @@ const PRECEDING_TOKENS = [':', '<', ',', '(', '=', 'new'];
 const CLASS_REGEX = /(@:\w+\s*)?(^|[:<,(=]|(?:new))(\s*)((([a-z]([0-9a-z_]*)\.?)+)\.([A-Za-z_]\w*)(\.([A-Z_][A-Z_]+))?)\s*([(),>;={]|$)/gm;
 
 export type HoistParams = {
-  startIndex: number;
-  replaceLength: number;
-  lineNumber: number;
+  startIndex: number
+  replaceLength: number
+  lineNumber: number
 } & ImportMeta;
 
 type Conflicts = Map<string, { count: number, conflicts: ImportMeta[] }>;
@@ -26,12 +26,12 @@ export enum DuplicatesAction {
   ALIAS = 'alias'
 }
 
-function hoistCurrent(editor: TextEditor) {
+function hoistCurrent(editor: TextEditor): void {
   const cursorPlacement = editor.selection.active;
   const line = editor.document.lineAt(cursorPlacement.line);
 
   let index = 0;
-  for(let token of PRECEDING_TOKENS) {
+  for (const token of PRECEDING_TOKENS) {
     const currentIndex = line.text.lastIndexOf(token, cursorPlacement.character);
     if (currentIndex !== -1 && currentIndex > index) {
       index = currentIndex;
@@ -39,36 +39,37 @@ function hoistCurrent(editor: TextEditor) {
   }
 
   const match = CLASS_REGEX.exec(line.text.substr(index));
-  if (match) {
+  if (match != null) {
     const parsedName = parseName(line.lineNumber, match);
     if (parsedName !== null) {
       parsedName.startIndex += index;
-      prepareHoistEdits(editor, parsedName);
+
+      void prepareHoistEdits(editor, parsedName);
     }
   } else {
     notifyNoneFound();
   }
 }
 
-function hoistLine(editor: TextEditor) {
+function hoistLine(editor: TextEditor): void {
   const cursorPlacement = editor.selection.active;
   const line = editor.document.lineAt(cursorPlacement.line);
   const text = line.text;
 
-  let targets: HoistParams[] = matchPattern(text, line.lineNumber);
+  const targets: HoistParams[] = matchPattern(text, line.lineNumber);
 
   if (targets.length === 0) {
     notifyNoneFound();
     return;
   }
 
-  prepareHoistEdits(editor, targets);
+  void prepareHoistEdits(editor, targets);
 }
 
-function hoistFile(editor:TextEditor) {
+function hoistFile(editor: TextEditor): void {
   const content = editor.document.getText();
   let targets: HoistParams[] = [];
-  for(let [lineNumber, text] of content.split('\n').entries()) {
+  for (const [lineNumber, text] of content.split('\n').entries()) {
     targets = targets.concat(matchPattern(text, lineNumber));
   }
 
@@ -77,13 +78,15 @@ function hoistFile(editor:TextEditor) {
     return;
   }
 
-  prepareHoistEdits(editor, targets);
+  void prepareHoistEdits(editor, targets);
 }
 
-export function matchPattern(text:string, lineNumber:number) {
+export function matchPattern(text: string, lineNumber: number): HoistParams[] {
   let match: RegExpExecArray | null;
-  let targets: HoistParams[] = [];
-  while (match = CLASS_REGEX.exec(text)) {
+  const targets: HoistParams[] = [];
+
+  // eslint-disable-next-line no-cond-assign
+  while ((match = CLASS_REGEX.exec(text)) != null) {
     const parsedName = parseName(lineNumber, match);
     if (parsedName !== null) {
       targets.push(parsedName);
@@ -94,21 +97,21 @@ export function matchPattern(text:string, lineNumber:number) {
   return targets;
 }
 
-function parseName(lineNumber: number, match:RegExpMatchArray):HoistParams|null {
-  let shortName = match[8];
-  let moduleName = match[5];
-  let hoisted = `${moduleName}.${shortName}`;
-  let enumValue = undefined;
-  if (match[10]) {
+function parseName(lineNumber: number, match: RegExpMatchArray): HoistParams | null {
+  const shortName = match[8];
+  const moduleName = match[5];
+  const hoisted = `${moduleName}.${shortName}`;
+  let enumValue;
+  if (match[10] !== '') {
     enumValue = match[10];
   }
 
   let precedingOffset = match[2].length;
-  if (match[3]) {
+  if (match[3] !== '') {
     precedingOffset += match[3].length;
   }
 
-  if (match[1]) {
+  if (match[1] !== '') {
     return null;
   }
 
@@ -117,7 +120,7 @@ function parseName(lineNumber: number, match:RegExpMatchArray):HoistParams|null 
   }
 
   return {
-    startIndex: match.index! + precedingOffset,
+    startIndex: (match.index ?? 0) + precedingOffset,
     replaceLength: match[4].length,
     lineNumber,
     hoisted,
@@ -127,22 +130,22 @@ function parseName(lineNumber: number, match:RegExpMatchArray):HoistParams|null 
   };
 }
 
-export function findConflicts(targets: HoistParams[], imports:Imports): Conflicts {
-  let conflicts: Conflicts = new Map();
+export function findConflicts(targets: HoistParams[], imports: Imports): Conflicts {
+  const conflicts: Conflicts = new Map();
 
-  for (let target of targets) {
+  for (const target of targets) {
     parseConflict(target, conflicts);
   }
 
-  for (let imp of imports.unique.values()) {
+  for (const imp of imports.unique.values()) {
     parseConflict(imp, conflicts, true);
   }
 
   for (const conflict of conflicts.values()) {
     let aliasNum = 0;
     conflict.conflicts.forEach(el => {
-      if (el.alias) {
-        const num = parseInt(el.alias.split('_')[1], 10) || 0;
+      if (el.alias?.length > 0) {
+        const num = parseInt(el.alias.split('_')[1], 10) ?? 0;
         if (num >= aliasNum) {
           aliasNum = num + 1;
         }
@@ -150,7 +153,7 @@ export function findConflicts(targets: HoistParams[], imports:Imports): Conflict
     });
 
     if (!aliasNum) {
-      for (let single of conflict.conflicts) {
+      for (const single of conflict.conflicts) {
         // @TODO: What to do with conflicting wildcards?
         if (imports.wildcards.has(single.moduleName)) {
           aliasNum += 1;
@@ -158,11 +161,11 @@ export function findConflicts(targets: HoistParams[], imports:Imports): Conflict
       }
     }
 
-    for (let single of conflict.conflicts) {
+    for (const single of conflict.conflicts) {
       if (imports.wildcards.has(single.moduleName) || single.alias) {
         continue;
       }
-     
+
       if (aliasNum > 0) {
         single.alias = `${single.shortName}_${aliasNum}`;
       }
@@ -174,7 +177,7 @@ export function findConflicts(targets: HoistParams[], imports:Imports): Conflict
   return conflicts;
 }
 
-function parseConflict(source: ImportMeta, conflicts:Conflicts, importMode:boolean = false) {
+function parseConflict(source: ImportMeta, conflicts: Conflicts, importMode = false): void {
   if (!conflicts.has(source.shortName)) {
     if (importMode) {
       return;
@@ -200,14 +203,14 @@ function parseConflict(source: ImportMeta, conflicts:Conflicts, importMode:boole
   }
 }
 
-function applyAlias(target:HoistParams, alias:string) {
+function applyAlias(target: HoistParams, alias: string): void {
   target.hoisted = `${target.moduleName}.${target.shortName} as ${alias}`;
   target.alias = alias;
 }
 
-function resolveConflicts(targets:HoistParams[], imports:Imports, conflicts:Conflicts, duplicatesAction:DuplicatesAction) {
+function resolveConflicts(targets: HoistParams[], imports: Imports, conflicts: Conflicts, duplicatesAction: DuplicatesAction): number {
   let skipped = 0;
-  for (let [i, target] of targets.entries()) {
+  for (const [i, target] of targets.entries()) {
     if (!conflicts.has(target.shortName)) {
       continue;
     }
@@ -217,7 +220,7 @@ function resolveConflicts(targets:HoistParams[], imports:Imports, conflicts:Conf
 
     let shouldAlias = false;
     if (duplicatesAction === DuplicatesAction.SKIP) {
-      if (alias && !(new RegExp(`${target.shortName}_\\d+`).test(<string> alias))) {
+      if (alias && !(new RegExp(`${target.shortName}_\\d+`).test(alias))) {
         shouldAlias = true;
       } else if (conflict.count > 1) {
         skipped += 1;
@@ -230,13 +233,14 @@ function resolveConflicts(targets:HoistParams[], imports:Imports, conflicts:Conf
     }
 
     if (shouldAlias) {
+      // eslint-disable-next-line
       applyAlias(target, <string> alias);
     }
   }
-  
+
   if (duplicatesAction === DuplicatesAction.SKIP) {
     for (let i = 0; i < targets.length; ++i) {
-      if(targets[i] === undefined) {
+      if (targets[i] === undefined) {
         targets.splice(i--, 1);
       }
     }
@@ -245,8 +249,8 @@ function resolveConflicts(targets:HoistParams[], imports:Imports, conflicts:Conf
   return skipped;
 }
 
-function findAlias(target:HoistParams, modules:ImportMeta[]) {
-  for (let single of modules) {
+function findAlias(target: HoistParams, modules: ImportMeta[]): string | boolean {
+  for (const single of modules) {
     if (target.moduleName === single.moduleName) {
       return single.alias;
     }
@@ -255,20 +259,20 @@ function findAlias(target:HoistParams, modules:ImportMeta[]) {
   return false;
 }
 
-async function prepareHoistEdits(editor: TextEditor, sourceTargets: HoistParams[] | HoistParams) {
-  let targets:HoistParams[] = [];
-  if(!(sourceTargets instanceof Array)) {
+async function prepareHoistEdits(editor: TextEditor, sourceTargets: HoistParams[] | HoistParams): Promise<void> {
+  let targets: HoistParams[] = [];
+  if (!(sourceTargets instanceof Array)) {
     targets = [sourceTargets];
   } else {
     targets = sourceTargets;
   }
 
-  let allImports = enumerateImports(editor.document.getText());
+  const allImports = enumerateImports(editor.document.getText());
   const conflicts = findConflicts(targets, allImports);
 
-  let conflictMessages = [];
+  const conflictMessages = [];
 
-  for(let [shortName, modules] of conflicts.entries()) {
+  for (const [shortName, modules] of conflicts.entries()) {
     if (modules.count === 1) {
       continue;
     }
@@ -278,38 +282,38 @@ async function prepareHoistEdits(editor: TextEditor, sourceTargets: HoistParams[
 
   let duplicatesAction = DuplicatesAction.SKIP;
   if (conflictMessages.length > 0) {
-    let pickerPlaceholder = `Please pick an action for conflicts (for classes ${conflictMessages.map(m => `"${m}"`).join(', ')})`;
+    const pickerPlaceholder = `Please pick an action for conflicts (for classes ${conflictMessages.map(m => `"${m}"`).join(', ')})`;
     const value = await window.showQuickPick([{
-        id: DuplicatesAction.SKIP,
-        label: "Skip hoisting duplicates",
-      }, {
-        id: DuplicatesAction.FORCE,
-        label: "Force hoisting of duplicate modules",
-        description: "Some of the data will be lost",
-      }, {
-        id: DuplicatesAction.ALIAS,
-        label: "Automatically assign aliases to all duplicates"
-      }],
-      {
-          placeHolder: pickerPlaceholder
-      }
+      id: DuplicatesAction.SKIP,
+      label: 'Skip hoisting duplicates'
+    }, {
+      id: DuplicatesAction.FORCE,
+      label: 'Force hoisting of duplicate modules',
+      description: 'Some of the data will be lost'
+    }, {
+      id: DuplicatesAction.ALIAS,
+      label: 'Automatically assign aliases to all duplicates'
+    }],
+    {
+      placeHolder: pickerPlaceholder
+    }
     );
 
-    if (!value) {
+    if (value == null) {
       return;
     }
-    
+
     duplicatesAction = value.id;
   }
 
   applyHoistsToFile(editor, targets, allImports, conflicts, duplicatesAction);
 }
 
-export function applyHoistsToFile(editor: TextEditor, targets:HoistParams[], imports:Imports, conflicts:Conflicts, duplicatesAction: DuplicatesAction) {
-  editor.edit((builder) => {
-    let skipped = resolveConflicts(targets, imports, conflicts, duplicatesAction);
+export function applyHoistsToFile(editor: TextEditor, targets: HoistParams[], imports: Imports, conflicts: Conflicts, duplicatesAction: DuplicatesAction): void {
+  void editor.edit((builder) => {
+    const skipped = resolveConflicts(targets, imports, conflicts, duplicatesAction);
 
-    for (let target of targets) {
+    for (const target of targets) {
       let fullName = target.alias ? target.alias : target.shortName;
       if (target.enumValue) {
         fullName += `.${target.enumValue}`;
@@ -321,16 +325,16 @@ export function applyHoistsToFile(editor: TextEditor, targets:HoistParams[], imp
       ), fullName);
     }
 
-    let [duplicates, inserted] = applyImportsToFile(builder, targets, imports);
+    const [duplicates, inserted] = applyImportsToFile(builder, targets, imports);
     window.showInformationMessage(`Hoisted ${targets.length} imports - created ${inserted} new, skipped ${duplicates} duplicates, and skipped ${skipped} conflicts`);
   })
   ;
 }
 
-function applyImportsToFile(builder:TextEditorEdit, targets:HoistParams[], imports:Imports) {
+function applyImportsToFile(builder: TextEditorEdit, targets: HoistParams[], imports: Imports): number[] {
   let inserted = 0;
   let skipped = 0;
-  let duplicates = new Set();
+  const duplicates = new Set();
 
   for (const target of targets) {
     if (duplicates.has(target.hoisted) || imports.unique.has(`${target.moduleName}.${target.shortName}`) || imports.wildcards.has(target.moduleName)) {
@@ -347,22 +351,22 @@ function applyImportsToFile(builder:TextEditorEdit, targets:HoistParams[], impor
   return [skipped, inserted];
 }
 
-function notifyNoneFound() {
-  window.showInformationMessage('No hoistable imports found');
+function notifyNoneFound(): void {
+  void window.showInformationMessage('No hoistable imports found');
 }
 
-export function hoist(type: HoistMode) {
-  let editor = window.activeTextEditor;
-  if (!editor) {
+export function hoist(type: HoistMode): void {
+  const editor = window.activeTextEditor;
+  if (editor == null) {
     return;
   }
 
   CLASS_REGEX.lastIndex = 0;
 
   switch (type) {
-    case HoistMode.CURRENT: return hoistCurrent(editor);
-    case HoistMode.LINE: return hoistLine(editor);
-    case HoistMode.FILE: return hoistFile(editor);
+    case HoistMode.CURRENT: { hoistCurrent(editor); return; }
+    case HoistMode.LINE: { hoistLine(editor); return; }
+    case HoistMode.FILE: { hoistFile(editor); return; }
     default: throw new Error('Invalid hoist mode activated');
   }
 }
