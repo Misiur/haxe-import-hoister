@@ -12,7 +12,9 @@ export type HoistParams = {
   lineNumber: number
 } & ImportMeta;
 
-type Conflicts = Map<string, { count: number, conflicts: ImportMeta[] }>;
+// eslint-disable-next-line
+type Conflict = { count: number, conflicts: ImportMeta[] }
+type Conflicts = Map<string, Conflict>;
 type Alias = string | null;
 
 export enum HoistMode {
