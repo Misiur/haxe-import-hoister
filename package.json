@@ -9,7 +9,7 @@
         "url": "https://github.com/Misiur/haxe-import-hoister"
     },
     "engines": {
-        "vscode": "^1.22.0"
+        "vscode": "^1.105.0"
     },
     "categories": [
         "Other"
@@ -77,19 +77,23 @@
         "vscode:prepublish": "npm run compile",
         "compile": "tsc -p ./",
         "watch": "tsc -watch -p ./",
-        "test": "npm run compile && node ./out/test/runTests.js"
+        "test": "vscode-test"
     },
     "devDependencies": {
-        "@types/mocha": "^2.2.42",
-        "@types/node": "^16.11.7",
-        "@types/vscode": "^1.73.0",
+        "@types/mocha": "^10.0.6",
+        "@types/node": "^24.9.0",
+        "@types/vscode": "^1.105.0",
         "@typescript-eslint/eslint-plugin": "^5.48.0",
         "@typescript-eslint/parser": "^5.48.0",
-        "eslint": "^8.31.0",
+        "@vscode/test-cli": "^0.0.12",
+        "@vscode/test-electron": "^2.5.2",
+        "eslint": "^8.57.1",
         "eslint-config-standard-with-typescript": "^26.0.0",
         "eslint-plugin-import": "^2.26.0",
         "eslint-plugin-n": "^15.6.0",
         "eslint-plugin-promise": "^6.1.1",
-        "typescript": "^4.9.4"
+        "glob": "^10.3.10",
+        "mocha": "^10.2.0",
+        "typescript": "^5.9.3"
     }
 }

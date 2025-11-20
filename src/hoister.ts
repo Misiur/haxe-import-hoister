@@ -3,8 +3,9 @@
 import { window, Range, Position, TextEditor, TextEditorEdit } from 'vscode';
 import { Imports, ImportMeta, enumerateImports } from './importUtils';
 
-const PRECEDING_TOKENS = [':', '<', ',', '(', '=', 'new'];
-const CLASS_REGEX = /(@:\w+\s*)?(^|[:<,(=]|(?:new))(\s*)((([a-z]([0-9a-z_]*)\.?)+)\.([A-Za-z_]\w*)(\.([A-Z_][A-Z_]+))?)\s*([(),>;={]|$)/gm;
+const ALL_PACKAGED = /((((\w+)\.)+)([A-Z]\w+))/g;
+
+const CLASS_REGEX = /a/;
 
 export type HoistParams = {
   startIndex: number
@@ -29,29 +30,98 @@ export enum DuplicatesAction {
   ALIAS = 'alias'
 }
 
-function hoistCurrent(editor: TextEditor): void {
-  const cursorPlacement = editor.selection.active;
+function hoistCurrent(editor: TextEditor): RegExpExecArray | null {
+	const cursorPlacement = editor.selection.active;
   const line = editor.document.lineAt(cursorPlacement.line);
+	const linePackages = line.text.matchAll(ALL_PACKAGED);
 
-  let index = 0;
-  for (const token of PRECEDING_TOKENS) {
-    const currentIndex = line.text.lastIndexOf(token, cursorPlacement.character);
-    if (currentIndex !== -1 && currentIndex > index) {
-      index = currentIndex;
-    }
-  }
+	let pkg = getPackageToHoist(linePackages, cursorPlacement.character);
 
-  const match = CLASS_REGEX.exec(line.text.substr(index));
-  if (match != null) {
-    const parsedName = parseName(line.lineNumber, match);
-    if (parsedName !== null) {
-      parsedName.startIndex += index;
+	if (pkg == null) {
+		notifyNoneFound();
 
-      void prepareHoistEdits(editor, parsedName);
-    }
-  } else {
-    notifyNoneFound();
-  }
+		return null;
+	}
+
+	let hoisted = `${pkg.packageName}.${pkg.className}`;
+
+	const edit:HoistParams = {
+		startIndex: pkg.index,
+		replaceLength: hoisted.length + (pkg.enumModule?.length ?? 0) + (pkg.enumModule != null ? 1 : 0),
+		lineNumber: cursorPlacement.line,
+		hoisted,
+		moduleName: pkg.packageName,
+		enumValue: pkg.enumModule,
+		shortName: pkg.className,
+	};
+
+	console.log('Hoisting package:', edit);
+	console.log(pkg);
+
+	prepareHoistEdits(editor, edit);
+
+	return null;
+}
+
+function getPackageToHoist(packages:IterableIterator<RegExpMatchArray>, cursorPlacement:number): { packageName: string, className: string, index: number, enumModule?: string } | null {
+	let distance = -Infinity;
+	let closest = null;
+	
+	for (const pkg of packages) {
+		let index = pkg.index ?? 0;
+		if (index <= cursorPlacement && cursorPlacement <= index + pkg[1].length) {
+			closest = pkg;
+			break;
+		}
+		
+		if (distance < cursorPlacement - index) {
+			distance = cursorPlacement - index;
+			closest = pkg;
+		}
+	}
+	
+	if (closest == null) {
+		return null;
+	}
+	
+	let parts = closest[0].split('.');
+	let enumAndModule = parts.slice(-2);
+	let isEnum = false;
+
+	if (enumAndModule[1][0] === enumAndModule[1][0].toLocaleLowerCase()) {
+		// It's a method call, skip
+		return null;
+	}
+
+	if (enumAndModule[0][0] === enumAndModule[0][0].toUpperCase() && enumAndModule[1][0] === enumAndModule[1][0].toUpperCase()) {
+		isEnum = true;
+	}
+
+	if (enumAndModule[0][0] === enumAndModule[0][0].toLocaleLowerCase()) {
+		isEnum = false;
+	}
+
+	let packageName = parts.slice(0, isEnum ? -2 : -1).join('.');
+
+	const meta: {
+		index: number,
+		packageName: string,
+		className: string,
+		enumValue?: string
+	} = {
+		index: closest.index ?? 0,
+		packageName,
+		className: '',
+	};
+
+	if (isEnum) {
+		meta.className = enumAndModule[0];
+		meta.enumValue = enumAndModule[1];
+	} else {
+		meta.className = enumAndModule.pop() ?? '';
+	}
+
+	return meta;
 }
 
 function hoistLine(editor: TextEditor): void {
@@ -102,11 +172,11 @@ export function matchPattern(text: string, lineNumber: number): HoistParams[] {
 
 function parseName(lineNumber: number, match: RegExpMatchArray): HoistParams | null {
   const shortName = match[8];
-  const moduleName = match[5];
+  const moduleName = match[6];
   const hoisted = `${moduleName}.${shortName}`;
   let enumValue;
-  if (match[10] !== '') {
-    enumValue = match[10];
+  if (match[8] !== '') {
+    enumValue = match[8];
   }
 
   let precedingOffset = match[2].length;
@@ -114,11 +184,11 @@ function parseName(lineNumber: number, match: RegExpMatchArray): HoistParams | n
     precedingOffset += match[3].length;
   }
 
-  if (match[1] !== '') {
+  if (match[1]) {
     return null;
   }
 
-  if (match[2] !== 'new' && match[11] === '(') {
+  if (match[2] !== 'new' && match[9] === '(') {
     return null;
   }
 

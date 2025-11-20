@@ -13,7 +13,7 @@ function getByFilename(files:Uri[], fileName:string) {
   return files.find(file => basename(file.path) === fileName)!;
 }
 
-describe('Hoister tests', () => {
+suite('Hoister tests', () => {
   let editor:TextEditor;
   let files:Uri[];
 
@@ -22,7 +22,7 @@ describe('Hoister tests', () => {
     editor = await window.showTextDocument(getByFilename(files, SOURCE_FILE));
   });
 
-  it('should not break on updates', async () => {
+  test('should not break on updates', async () => {
     const document = editor.document.getText();
     const imports = importUtils.enumerateImports(document);
     let targets: hoister.HoistParams[] = [];
